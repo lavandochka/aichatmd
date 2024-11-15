@@ -11,37 +11,52 @@ const App = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleStreamingEffect = (content) => {
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      { sender: "llm", content }
-    ]);
-  };
-
   const handleSend = async () => {
     if (!inputValue.trim()) return;
 
-    // Добавляем сообщение пользователя в историю
     setMessages((prevMessages) => [
       ...prevMessages,
-      { sender: "user", content: inputValue }
+      { sender: "user", content: inputValue },
     ]);
     setIsLoading(true);
-    setInputValue('');
+    setInputValue("");
 
     try {
-      // Отправка запроса к GROQ API
       const response = await groq.chat.completions.create({
         messages: [{ role: "user", content: inputValue }],
         model: "llama3-8b-8192",
+        stream: true,
       });
 
-      const content = response?.choices?.[0]?.message?.content;
-      handleStreamingEffect(content);
-    } catch (error) {
+      let assistantMessage = "";
       setMessages((prevMessages) => [
         ...prevMessages,
-        { sender: "system", content: "Error fetching response." }
+        { sender: "llm", content: "" },
+      ]);
+
+      for await (const chunk of response) {
+        const content = chunk?.choices?.[0]?.delta?.content;
+        if (content) {
+          assistantMessage += content;
+          setMessages((prevMessages) => {
+            const lastMessage = prevMessages[prevMessages.length - 1];
+            if (lastMessage.sender === "llm") {
+              const updatedMessage = {
+                ...lastMessage,
+                content: assistantMessage,
+              };
+              return [...prevMessages.slice(0, -1), updatedMessage];
+            } else {
+              return prevMessages;
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        { sender: "system", content: "Error fetching response." },
       ]);
     } finally {
       setIsLoading(false);
@@ -52,15 +67,27 @@ const App = () => {
     <div className="p-4 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Real-time Chat</h1>
       <div className="mb-6 bg-gray-100 p-4 rounded shadow">
-        <div
-          className="overflow-auto max-h-96 mb-4 space-y-2" // Сделаем блок с сообщениями прокручиваемым и добавим отступы между сообщениями
-        >
+        <div className="overflow-auto max-h-96 mb-4 space-y-2">
           {messages.map((msg, index) => (
             <div
               key={index}
-              className={`p-2 rounded ${msg.sender === "user" ? "bg-blue-100" : msg.sender === "llm" ? "bg-green-100" : "bg-gray-200"}`}
+              className={`p-2 rounded ${
+                msg.sender === "user"
+                  ? "bg-blue-100"
+                  : msg.sender === "llm"
+                  ? "bg-green-100"
+                  : "bg-gray-200"
+              }`}
             >
-              <p className={`text-sm ${msg.sender === "user" ? "text-blue-800" : msg.sender === "llm" ? "text-green-800" : "text-gray-800"}`}>
+              <p
+                className={`text-sm ${
+                  msg.sender === "user"
+                    ? "text-blue-800"
+                    : msg.sender === "llm"
+                    ? "text-green-800"
+                    : "text-gray-800"
+                }`}
+              >
                 {msg.content}
               </p>
             </div>
