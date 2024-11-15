@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Groq from "groq-sdk";
 
 const groq = new Groq({
@@ -10,9 +10,32 @@ const App = () => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null); 
+  const messageContentRef = useRef(""); 
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const simulateTypingEffect = (newMessageContent, updateMessage) => {
+    let currentText = "";
+    let index = 0;
+    
+    
+    const typingInterval = setInterval(() => {
+      if (index < newMessageContent.length) {
+        currentText += newMessageContent[index];
+        updateMessage(currentText);
+        index++;
+      } else {
+        clearInterval(typingInterval); 
+      }
+    }, 20); 
+  };
 
   const handleSend = async () => {
     if (!inputValue.trim()) return;
+
 
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -28,27 +51,32 @@ const App = () => {
         stream: true,
       });
 
-      let assistantMessage = "";
+      
       setMessages((prevMessages) => [
         ...prevMessages,
         { sender: "llm", content: "" },
       ]);
 
+      messageContentRef.current = ""; 
+    
       for await (const chunk of response) {
         const content = chunk?.choices?.[0]?.delta?.content;
         if (content) {
-          assistantMessage += content;
+          messageContentRef.current += content;
+
+          
           setMessages((prevMessages) => {
             const lastMessage = prevMessages[prevMessages.length - 1];
             if (lastMessage.sender === "llm") {
-              const updatedMessage = {
-                ...lastMessage,
-                content: assistantMessage,
-              };
-              return [...prevMessages.slice(0, -1), updatedMessage];
-            } else {
-              return prevMessages;
+              simulateTypingEffect(messageContentRef.current, (updatedContent) => {
+                const updatedMessage = { ...lastMessage, content: updatedContent };
+                setMessages((prevMessages) => [
+                  ...prevMessages.slice(0, -1),
+                  updatedMessage,
+                ]);
+              });
             }
+            return prevMessages;
           });
         }
       }
@@ -71,7 +99,7 @@ const App = () => {
           {messages.map((msg, index) => (
             <div
               key={index}
-              className={`p-2 rounded ${
+              className={`p-2 rounded transition-all duration-300 ease-in-out ${
                 msg.sender === "user"
                   ? "bg-blue-100"
                   : msg.sender === "llm"
@@ -94,6 +122,7 @@ const App = () => {
           ))}
           {isLoading && <p className="text-blue-500 italic">Loading...</p>}
         </div>
+        <div ref={messagesEndRef} /> {/* Auto-scroll ref */}
       </div>
       <div className="flex space-x-2">
         <input
@@ -116,3 +145,4 @@ const App = () => {
 };
 
 export default App;
+
